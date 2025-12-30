@@ -13,6 +13,7 @@ endif()
 option(ANAM_BUILD_TESTS "Build unit tests" ON)
 option(ANAM_BUILD_BENCH "Build benchmarks" ON)
 option(ANAM_ASAN "Enable AddressSanitizer" OFF)
+option(ANAM_TRACE "Enable tracing infrastructure" OFF)
 
 if(ANAM_ASAN AND CMAKE_C_COMPILER_ID MATCHES "Clang")
     add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
@@ -26,11 +27,15 @@ else()
 endif()
 
 # Core library
-add_library(anamnesis STATIC src/anamnesis.c)
+add_library(anamnesis STATIC src/anamnesis.c src/anamnesis_trace.c)
 target_include_directories(anamnesis PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+
+if(ANAM_TRACE)
+    target_compile_definitions(anamnesis PUBLIC ANAM_TRACE_ENABLED)
+endif()
 
 # Queue library
 add_library(anamnesis_queue STATIC src/anamnesis_queue.c)

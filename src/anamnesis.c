@@ -8,6 +8,7 @@
  */
 
 #include "anamnesis.h"
+#include "anamnesis_trace.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
@@ -232,11 +233,19 @@ AnamHandle anam_alloc(AnamPool* pool) {
     
     atomic_fetch_sub(&pool->slots_free, 1);
     atomic_fetch_add(&pool->alloc_count, 1);
-    
+
     if (pool->zero_on_alloc) {
         memset(user_ptr, 0, pool->slot_size);
     }
-    
+
+    /* Trace allocation */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        anam_trace_alloc((uint32_t)slot_idx, gen);
+    }
+#endif
+
     return encode_handle(gen, user_ptr, ANAM_STATE_LIVE);
 }
 
@@ -268,7 +277,15 @@ bool anam_release(AnamPool* pool, AnamHandle handle) {
     /* Increment generation — this slot is reborn */
     uint16_t new_gen = true_gen + 1;
     atomic_store(&header->generation, new_gen);
-    
+
+    /* Trace release */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        anam_trace_release((uint32_t)slot_idx, claimed_gen);
+    }
+#endif
+
     if (pool->zero_on_release) {
         memset(user_ptr, 0, pool->slot_size);
     }
@@ -313,12 +330,22 @@ void* anam_get(AnamPool* pool, AnamHandle handle) {
     uint16_t claimed_gen = decode_gen(handle);
     uint16_t true_gen = atomic_load(&header->generation);
     
-    if (claimed_gen != true_gen) {
+    /* Trace get operation */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        bool validated = (claimed_gen == true_gen);
+        anam_trace_get((uint32_t)slot_idx, claimed_gen, validated);
+    }
+#endif
+    bool validated = (claimed_gen == true_gen);
+
+    if (!validated) {
         /* Anamnesis: The counterfeit is exposed */
         atomic_fetch_add(&pool->anamnesis_count, 1);
         return NULL;
     }
-    
+
     return user_ptr;
 }
 
