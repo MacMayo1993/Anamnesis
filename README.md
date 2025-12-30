@@ -1,5 +1,7 @@
 # Anamnesis
 
+[![CI](https://github.com/MacMayo1993/Anamnesis/workflows/CI/badge.svg)](https://github.com/MacMayo1993/Anamnesis/actions)
+
 **Handle-based memory architecture for concurrent systems.**
 
 *"The Empire never ended."* — Philip K. Dick, VALIS
@@ -201,3 +203,64 @@ Even in the low bits of a pointer, there is meaning.
 ---
 
 **Anamnesis** — *The one who remembers.*
+
+## Testing & Validation
+
+### Unit Tests
+```bash
+cmake -B build -DANAM_BUILD_TESTS=ON
+cmake --build build
+cd build && ctest --output-on-failure
+```
+
+### Stress Tests
+Long-running concurrent tests designed to expose race conditions and memory bugs:
+```bash
+./build/stress_test
+```
+
+**Default duration:** 10 seconds per test (configurable via `-DSTRESS_DURATION_SEC=N`)
+
+### Sanitizers
+Run tests with sanitizers for comprehensive validation:
+
+**ThreadSanitizer** (catch data races):
+```bash
+cmake -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_C_FLAGS="-fsanitize=thread -g -O1" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+cmake --build build
+cd build && TSAN_OPTIONS="halt_on_error=1" ctest
+```
+
+**AddressSanitizer** (catch memory errors):
+```bash
+cmake -B build -DANAM_ASAN=ON
+cmake --build build
+cd build && ASAN_OPTIONS="halt_on_error=1" ctest
+```
+
+**UndefinedBehaviorSanitizer** (catch UB):
+```bash
+cmake -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_C_FLAGS="-fsanitize=undefined -fno-sanitize-recover=all -g" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=undefined"
+cmake --build build
+cd build && ctest
+```
+
+**Strict Validation Mode** (catch forged mid-slot pointers, ~100x slower):
+```bash
+cmake -B build -DCMAKE_C_FLAGS="-DANAM_STRICT_VALIDATION"
+cmake --build build
+cd build && ctest
+```
+
+### Continuous Integration
+All tests run automatically on push/PR with:
+- Ubuntu + macOS builds
+- TSan, ASan, UBSan
+- Strict validation mode
+- Extended 30-second stress tests
+
+See `.github/workflows/ci.yml` for details.

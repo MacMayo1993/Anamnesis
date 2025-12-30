@@ -52,21 +52,27 @@ add_library(anam::anam ALIAS anam)
 # Tests
 if(ANAM_BUILD_TESTS)
     enable_testing()
-    
+
     add_executable(test_anamnesis tests/test_anamnesis.c)
     target_link_libraries(test_anamnesis PRIVATE anamnesis)
-    
+
     add_executable(test_queue tests/test_queue.c)
     target_link_libraries(test_queue PRIVATE anamnesis_queue)
-    
+
+    add_executable(stress_test tests/stress_test.c)
+    target_link_libraries(stress_test PRIVATE anamnesis_queue)
+    target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=10)
+
     if(NOT WIN32)
         find_package(Threads REQUIRED)
         target_link_libraries(test_anamnesis PRIVATE Threads::Threads)
         target_link_libraries(test_queue PRIVATE Threads::Threads)
+        target_link_libraries(stress_test PRIVATE Threads::Threads)
     endif()
-    
+
     add_test(NAME anamnesis_tests COMMAND test_anamnesis)
     add_test(NAME queue_tests COMMAND test_queue)
+    add_test(NAME stress_tests COMMAND stress_test)
 endif()
 
 # Benchmarks
