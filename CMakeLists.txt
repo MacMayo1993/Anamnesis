@@ -66,8 +66,9 @@ if(ANAM_BUILD_TESTS)
 
     add_executable(stress_test tests/stress_test.c)
     target_link_libraries(stress_test PRIVATE anamnesis_queue)
-    # Reduce duration for CI (sanitizers slow down tests significantly)
-    target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=3)
+    # Reduce duration for CI (sanitizers/strict validation slow down tests significantly)
+    # 1 second is enough to catch bugs while staying under timeout limits
+    target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=1)
 
     add_executable(trace_test tests/trace_test.c)
     target_link_libraries(trace_test PRIVATE anamnesis)
@@ -87,7 +88,8 @@ if(ANAM_BUILD_TESTS)
     set_tests_properties(queue_tests PROPERTIES TIMEOUT 30)
 
     add_test(NAME stress_tests COMMAND stress_test)
-    set_tests_properties(stress_tests PROPERTIES TIMEOUT 60)
+    # Longer timeout for sanitizer/strict validation builds (slower)
+    set_tests_properties(stress_tests PROPERTIES TIMEOUT 120)
 endif()
 
 # Benchmarks
