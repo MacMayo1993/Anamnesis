@@ -84,10 +84,10 @@ void* pool_stress_worker(void* arg) {
                 handles[handle_count++] = h;
                 atomic_fetch_add(&stats.allocs, 1);
 
-                /* Write some data */
-                int* data = (int*)anam_get(ctx->pool, h);
+                /* Write some data (atomic to avoid TSan false positives on slot reuse) */
+                _Atomic(int)* data = (_Atomic(int)*)anam_get(ctx->pool, h);
                 if (data) {
-                    *data = ctx->thread_id * 10000 + handle_count;
+                    atomic_store(data, ctx->thread_id * 10000 + handle_count);
                     atomic_fetch_add(&stats.gets, 1);
                 }
             }

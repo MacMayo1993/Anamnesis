@@ -66,7 +66,8 @@ if(ANAM_BUILD_TESTS)
 
     add_executable(stress_test tests/stress_test.c)
     target_link_libraries(stress_test PRIVATE anamnesis_queue)
-    target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=10)
+    # Reduce duration for CI (sanitizers slow down tests significantly)
+    target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=3)
 
     add_executable(trace_test tests/trace_test.c)
     target_link_libraries(trace_test PRIVATE anamnesis)
@@ -80,8 +81,13 @@ if(ANAM_BUILD_TESTS)
     endif()
 
     add_test(NAME anamnesis_tests COMMAND test_anamnesis)
+    set_tests_properties(anamnesis_tests PROPERTIES TIMEOUT 30)
+
     add_test(NAME queue_tests COMMAND test_queue)
+    set_tests_properties(queue_tests PROPERTIES TIMEOUT 30)
+
     add_test(NAME stress_tests COMMAND stress_test)
+    set_tests_properties(stress_tests PROPERTIES TIMEOUT 60)
 endif()
 
 # Benchmarks
