@@ -68,11 +68,15 @@ if(ANAM_BUILD_TESTS)
     target_link_libraries(stress_test PRIVATE anamnesis_queue)
     target_compile_definitions(stress_test PRIVATE STRESS_DURATION_SEC=10)
 
+    add_executable(trace_test tests/trace_test.c)
+    target_link_libraries(trace_test PRIVATE anamnesis)
+
     if(NOT WIN32)
         find_package(Threads REQUIRED)
         target_link_libraries(test_anamnesis PRIVATE Threads::Threads)
         target_link_libraries(test_queue PRIVATE Threads::Threads)
         target_link_libraries(stress_test PRIVATE Threads::Threads)
+        target_link_libraries(trace_test PRIVATE Threads::Threads)
     endif()
 
     add_test(NAME anamnesis_tests COMMAND test_anamnesis)
