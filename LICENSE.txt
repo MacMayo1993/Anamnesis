@@ -1,0 +1,56 @@
+ANAMNESIS - DUAL LICENSE
+
+"The Empire never ended." — Philip K. Dick
+
+Copyright (c) 2025 Mac Mayo. All rights reserved.
+
+================================================================================
+OPEN SOURCE LICENSE (for non-commercial use)
+================================================================================
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, and distribute the Software for NON-COMMERCIAL purposes only,
+subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. NON-COMMERCIAL USE means use for:
+   - Personal projects
+   - Academic research
+   - Open source projects with OSI-approved licenses
+   - Educational purposes
+   - Evaluation and prototyping
+
+3. Any derivative works must be distributed under these same terms.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+================================================================================
+COMMERCIAL LICENSE
+================================================================================
+
+For COMMERCIAL USE, contact: licensing@anamnesis.dev
+
+Commercial use includes:
+- Integration into proprietary software
+- Use in software sold or licensed for profit
+- Production use by for-profit entities
+- Redistribution as part of commercial products
+
+Commercial licenses include patent grant for the underlying technique.
+
+================================================================================
+PATENT NOTICE
+================================================================================
+
+The underlying technique (dual-end pointer tagging with generation counters)
+is the subject of US Provisional Patent Application filed December 2025.
+
+Commercial licensees receive an explicit patent grant.
+Open source users receive a patent grant for non-commercial use.
+
+================================================================================
