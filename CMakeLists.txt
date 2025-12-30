@@ -87,8 +87,9 @@ endif()
 # Benchmarks
 if(ANAM_BUILD_BENCH)
     add_executable(bench_anamnesis bench/bench.cpp)
+    target_compile_features(bench_anamnesis PRIVATE cxx_std_20)
     target_link_libraries(bench_anamnesis PRIVATE anamnesis)
-    
+
     if(NOT WIN32)
         find_package(Threads REQUIRED)
         target_link_libraries(bench_anamnesis PRIVATE Threads::Threads)

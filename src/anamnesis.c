@@ -100,10 +100,6 @@ static inline SlotHeader* get_header(void* user_ptr) {
     return (SlotHeader*)((char*)user_ptr - sizeof(SlotHeader));
 }
 
-static inline void* get_user_ptr(SlotHeader* header) {
-    return (void*)((char*)header + sizeof(SlotHeader));
-}
-
 static inline void* slot_from_index(AnamPool* pool, size_t index) {
     return (char*)pool->slots_base + (index * pool->slot_stride);
 }
