@@ -99,8 +99,8 @@ void* consumer(void* arg) {
 
 void test_queue_concurrent(void) {
     TEST_BEGIN("queue_concurrent");
-    
-    AnamQueueConfig cfg = { .item_size = sizeof(int), .capacity = 1000 };
+
+    AnamQueueConfig cfg = { .item_size = sizeof(int), .capacity = 5000 };
     AnamQueue* q = anam_queue_create(&cfg);
     
     atomic_int produced = 0, consumed = 0, sum = 0;
