@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  # Standard build and test
+  build-test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF
+
+    - name: Build
+      run: cmake --build build -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+    - name: Test
+      run: cd build && ctest --output-on-failure --timeout 60
+
+  # ThreadSanitizer - catches data races
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y clang
+
+    - name: Configure with TSan
+      run: |
+        cmake -B build \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF \
+          -DCMAKE_C_FLAGS="-fsanitize=thread -g -O1" \
+          -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+
+    - name: Build
+      run: cmake --build build -j$(nproc)
+
+    - name: Run tests with TSan
+      run: |
+        cd build
+        export TSAN_OPTIONS="halt_on_error=1 history_size=7 second_deadlock_stack=1"
+        ctest --output-on-failure --timeout 120
+
+  # AddressSanitizer - catches memory errors
+  asan:
+    name: AddressSanitizer
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y clang
+
+    - name: Configure with ASan
+      run: |
+        cmake -B build \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF \
+          -DANAM_ASAN=ON
+
+    - name: Build
+      run: cmake --build build -j$(nproc)
+
+    - name: Run tests with ASan
+      run: |
+        cd build
+        export ASAN_OPTIONS="halt_on_error=1 detect_leaks=1"
+        ctest --output-on-failure --timeout 120
+
+  # UndefinedBehaviorSanitizer - catches UB
+  ubsan:
+    name: UndefinedBehaviorSanitizer
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y clang
+
+    - name: Configure with UBSan
+      run: |
+        cmake -B build \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF \
+          -DCMAKE_C_FLAGS="-fsanitize=undefined -fno-sanitize-recover=all -g -O1" \
+          -DCMAKE_CXX_FLAGS="-fsanitize=undefined -fno-sanitize-recover=all -g -O1" \
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=undefined"
+
+    - name: Build
+      run: cmake --build build -j$(nproc)
+
+    - name: Run tests with UBSan
+      run: |
+        cd build
+        export UBSAN_OPTIONS="halt_on_error=1 print_stacktrace=1"
+        ctest --output-on-failure --timeout 120
+
+  # Strict validation mode (catches forged mid-slot pointers)
+  strict-validation:
+    name: Strict Validation Mode
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure with strict validation
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF \
+          -DCMAKE_C_FLAGS="-DANAM_STRICT_VALIDATION -g -O2" \
+          -DCMAKE_CXX_FLAGS="-DANAM_STRICT_VALIDATION -g -O2"
+
+    - name: Build
+      run: cmake --build build -j$(nproc)
+
+    - name: Run tests
+      run: cd build && ctest --output-on-failure --timeout 300
+
+  # Long-running stress test (30 seconds per test)
+  stress-long:
+    name: Extended Stress Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DANAM_BUILD_TESTS=ON \
+          -DANAM_BUILD_BENCH=OFF
+
+    - name: Build
+      run: cmake --build build -j$(nproc)
+
+    - name: Run extended stress test
+      run: |
+        cd build
+        # Rebuild stress test with longer duration
+        cmake -DSTRESS_DURATION_SEC=30 ..
+        cmake --build . --target stress_test
+        ./stress_test

@@ -292,7 +292,7 @@ void test_generation_cycling(void) {
     
     AnamPoolStats stats;
     anam_pool_stats(pool, &stats);
-    TEST_ASSERT(stats.generation_max == 100, "max generation should be 100");
+    TEST_ASSERT(stats.generation_max == 99, "max generation should be 99");
     
     anam_pool_destroy(pool);
     TEST_PASS();

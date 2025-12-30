@@ -8,9 +8,11 @@
  */
 
 #include "anamnesis.h"
+#include "anamnesis_trace.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -69,6 +71,7 @@ struct AnamPool {
     /* Configuration (immutable) */
     size_t slot_size;
     size_t slot_stride;
+    size_t slot_stride_mask; /* For fast modulo when stride is power-of-2; otherwise 0 */
     size_t slot_count;
     size_t alignment;
     bool   zero_on_alloc;
@@ -97,10 +100,6 @@ static inline SlotHeader* get_header(void* user_ptr) {
     return (SlotHeader*)((char*)user_ptr - sizeof(SlotHeader));
 }
 
-static inline void* get_user_ptr(SlotHeader* header) {
-    return (void*)((char*)header + sizeof(SlotHeader));
-}
-
 static inline void* slot_from_index(AnamPool* pool, size_t index) {
     return (char*)pool->slots_base + (index * pool->slot_stride);
 }
@@ -109,7 +108,20 @@ static inline bool in_pool(AnamPool* pool, void* ptr) {
     char* p = (char*)ptr;
     char* base = (char*)pool->slots_base;
     char* end = base + (pool->slot_count * pool->slot_stride);
-    return p >= base && p < end;
+    if (p < base || p >= end) return false;
+
+#ifdef ANAM_STRICT_VALIDATION
+    /* Strict mode: verify pointer is exactly on slot boundary (prevents forged mid-slot pointers)
+       WARNING: This has significant performance cost. Only enable for debugging/testing. */
+    size_t off = (size_t)(p - base);
+    /* Fast path: if stride is power-of-2, use bit masking instead of modulo */
+    if (pool->slot_stride_mask) {
+        return (off & pool->slot_stride_mask) == 0;
+    }
+    return (off % pool->slot_stride) == 0;
+#else
+    return true;
+#endif
 }
 
 static inline size_t align_up(size_t value, size_t alignment) {
@@ -127,6 +139,7 @@ AnamPool* anam_pool_create(const AnamPoolConfig* config) {
     if (cfg.slot_size == 0 || cfg.slot_count == 0) return NULL;
     if (cfg.alignment == 0) cfg.alignment = 8;
     if ((cfg.alignment & (cfg.alignment - 1)) != 0) return NULL;
+    if (cfg.alignment < 8) return NULL; /* handle encodes 3 state bits in address */
     
     AnamPool* pool = (AnamPool*)calloc(1, sizeof(AnamPool));
     if (!pool) return NULL;
@@ -138,6 +151,7 @@ AnamPool* anam_pool_create(const AnamPoolConfig* config) {
     
     pool->slot_size = cfg.slot_size;
     pool->slot_stride = stride;
+    pool->slot_stride_mask = (stride & (stride - 1)) == 0 ? (stride - 1) : 0;
     pool->slot_count = cfg.slot_count;
     pool->alignment = cfg.alignment;
     pool->zero_on_alloc = cfg.zero_on_alloc;
@@ -145,6 +159,7 @@ AnamPool* anam_pool_create(const AnamPoolConfig* config) {
     
     /* Allocate memory */
     size_t total = stride * cfg.slot_count + cfg.alignment;
+    total = align_up(total, cfg.alignment); /* C11 aligned_alloc requires size multiple of alignment */
     pool->memory = ANAM_ALIGNED_ALLOC(cfg.alignment, total);
     if (!pool->memory) {
         free(pool);
@@ -203,24 +218,40 @@ AnamHandle anam_alloc(AnamPool* pool) {
         
     } while (!atomic_compare_exchange_weak_explicit(
         &pool->free_head, &old_head, new_head,
-        memory_order_release, memory_order_relaxed));
-    
+        memory_order_acquire, memory_order_relaxed));
+
     uint16_t gen = atomic_load(&header->generation);
+    uint16_t max_gen = atomic_load(&pool->generation_max);
+    while (gen > max_gen) {
+        if (atomic_compare_exchange_weak(&pool->generation_max, &max_gen, gen)) break;
+    }
     atomic_store(&header->next, ANAM_NULL);
     
     atomic_fetch_sub(&pool->slots_free, 1);
     atomic_fetch_add(&pool->alloc_count, 1);
-    
+
     if (pool->zero_on_alloc) {
         memset(user_ptr, 0, pool->slot_size);
     }
-    
+
+    /* Trace allocation */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        anam_trace_alloc((uint32_t)slot_idx, gen);
+    }
+#endif
+
     return encode_handle(gen, user_ptr, ANAM_STATE_LIVE);
 }
 
 bool anam_release(AnamPool* pool, AnamHandle handle) {
     if (!pool || anam_is_null(handle)) return false;
-    
+    if (anam_state(handle) != ANAM_STATE_LIVE) {
+        atomic_fetch_add(&pool->anamnesis_count, 1);
+        return false;
+    }
+
     void* user_ptr = decode_addr(handle);
     if (!in_pool(pool, user_ptr)) {
         atomic_fetch_add(&pool->anamnesis_count, 1);
@@ -242,13 +273,15 @@ bool anam_release(AnamPool* pool, AnamHandle handle) {
     /* Increment generation — this slot is reborn */
     uint16_t new_gen = true_gen + 1;
     atomic_store(&header->generation, new_gen);
-    
-    /* Track max generation */
-    uint16_t max_gen = atomic_load(&pool->generation_max);
-    while (new_gen > max_gen) {
-        if (atomic_compare_exchange_weak(&pool->generation_max, &max_gen, new_gen)) break;
+
+    /* Trace release */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        anam_trace_release((uint32_t)slot_idx, claimed_gen);
     }
-    
+#endif
+
     if (pool->zero_on_release) {
         memset(user_ptr, 0, pool->slot_size);
     }
@@ -293,12 +326,22 @@ void* anam_get(AnamPool* pool, AnamHandle handle) {
     uint16_t claimed_gen = decode_gen(handle);
     uint16_t true_gen = atomic_load(&header->generation);
     
-    if (claimed_gen != true_gen) {
+    /* Trace get operation */
+#ifdef ANAM_TRACE_ENABLED
+    {
+        size_t slot_idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        bool validated = (claimed_gen == true_gen);
+        anam_trace_get((uint32_t)slot_idx, claimed_gen, validated);
+    }
+#endif
+    bool validated = (claimed_gen == true_gen);
+
+    if (!validated) {
         /* Anamnesis: The counterfeit is exposed */
         atomic_fetch_add(&pool->anamnesis_count, 1);
         return NULL;
     }
-    
+
     return user_ptr;
 }
 
@@ -324,16 +367,35 @@ void anam_pool_stats(AnamPool* pool, AnamPoolStats* stats) {
 
 void anam_foreach(AnamPool* pool, AnamIterFn fn, void* user_data) {
     if (!pool || !fn) return;
-    
+
+    bool* is_free = (bool*)calloc(pool->slot_count, sizeof(bool));
+    if (!is_free) return;
+
+    /* Build a snapshot of the free list.
+       Not thread-safe; intended only for debugging/inspection. */
+    AnamHandle h = atomic_load(&pool->free_head);
+    while (!anam_is_null(h)) {
+        void* user_ptr = decode_addr(h);
+        if (!in_pool(pool, user_ptr)) break;
+
+        size_t idx = (size_t)(((char*)user_ptr - (char*)pool->slots_base) / pool->slot_stride);
+        if (idx >= pool->slot_count) break;
+        if (is_free[idx]) break; /* detect cycles/corruption */
+        is_free[idx] = true;
+
+        SlotHeader* header = get_header(user_ptr);
+        h = atomic_load(&header->next);
+    }
+
     for (size_t i = 0; i < pool->slot_count; i++) {
+        if (is_free[i]) continue;
+
         void* user_ptr = slot_from_index(pool, i);
         SlotHeader* header = get_header(user_ptr);
-        
-        AnamHandle next = atomic_load(&header->next);
-        if (anam_is_null(next)) {
-            uint16_t gen = atomic_load(&header->generation);
-            AnamHandle handle = encode_handle(gen, user_ptr, ANAM_STATE_LIVE);
-            if (!fn(handle, user_ptr, user_data)) break;
-        }
+        uint16_t gen = atomic_load(&header->generation);
+        AnamHandle handle = encode_handle(gen, user_ptr, ANAM_STATE_LIVE);
+        if (!fn(handle, user_ptr, user_data)) break;
     }
+
+    free(is_free);
 }

@@ -19,7 +19,7 @@ void do_not_optimize(T const& value) {
 }
 
 void bench_alloc_release(size_t iterations) {
-    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000 };
+    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000, .alignment = 8, .zero_on_alloc = false, .zero_on_release = false };
     AnamPool* pool = anam_pool_create(&cfg);
     
     auto start = Clock::now();
@@ -52,7 +52,7 @@ void bench_malloc_free(size_t iterations) {
 }
 
 void bench_get(size_t iterations) {
-    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000 };
+    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000, .alignment = 8, .zero_on_alloc = false, .zero_on_release = false };
     AnamPool* pool = anam_pool_create(&cfg);
     
     std::vector<AnamHandle> handles(10000);
@@ -78,7 +78,7 @@ void bench_get(size_t iterations) {
 }
 
 void bench_concurrent(int num_threads, size_t ops_per_thread) {
-    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000 };
+    AnamPoolConfig cfg = { .slot_size = 64, .slot_count = 10000, .alignment = 8, .zero_on_alloc = false, .zero_on_release = false };
     AnamPool* pool = anam_pool_create(&cfg);
     
     std::atomic<size_t> total_ops{0};
